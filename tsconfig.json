@@ -1,0 +1,14 @@
+{
+    "include": [
+        "src/**/*.ts",
+        "src/**/*.tsx"
+    ],
+    "compilerOptions": {
+        "target": "esnext",
+        "composite": true,
+        "baseUrl": ".",
+        "moduleResolution": "bundler",
+        "jsx": "preserve",
+        "jsxImportSource": "vue"
+    }
+}
