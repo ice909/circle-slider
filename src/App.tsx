@@ -5,9 +5,9 @@ export default defineComponent({
     name: "App",
     setup() {
         return () => (
-            <>
-                <CircleSlider size={window.innerWidth * 0.74} railWidth={50} />
-            </>
+          <>
+            <CircleSlider config={{ strokeWidth: 34, handleRadius: 17 }} />
+          </>
         );
     }
 })
