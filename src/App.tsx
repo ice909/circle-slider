@@ -6,7 +6,7 @@ export default defineComponent({
     setup() {
         return () => (
           <>
-            <CircleSlider config={{ strokeWidth: 34, handleRadius: 17 }} />
+            <CircleSlider config={{ strokeWidth: 10, handleRadius: 5, strokePadding: 2 }} />
           </>
         );
     }

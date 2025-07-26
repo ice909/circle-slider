@@ -46,7 +46,8 @@ export default defineComponent({
     },
     width: {
       type: Number,
-      default: () => window.innerWidth * 0.84,
+      default: () =>
+        Math.min(window.innerWidth * 0.84, window.innerHeight * 0.84),
     },
     height: {
       type: Number,
@@ -78,9 +79,6 @@ export default defineComponent({
         text: '#374151',
       },
     };
-
-    console.log('width', props.width, 'height', props.height);
-    console.log('radius', defaultConfig.radius);
 
     const mergedConfig = ref<CircleSliderConfig>({
       ...defaultConfig,
@@ -193,16 +191,32 @@ class CircularSlider {
 
     this.validateConfig();
 
-    this.center = {
-      x: canvas.width / 2,
-      y: canvas.height / 2,
-    };
+    this.setupCanvasDPI();
 
     this.angleFrom = this.valueToAngle(this.config.from);
     this.angleTo = this.valueToAngle(this.config.to);
 
     this.setupEventListeners();
     this.draw();
+  }
+
+  // 适配高DPI屏幕
+  private setupCanvasDPI() {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = this.canvas.getBoundingClientRect();
+
+    this.canvas.width = rect.width * dpr;
+    this.canvas.height = rect.height * dpr;
+
+    this.canvas.style.width = `${rect.width}px`;
+    this.canvas.style.height = `${rect.height}px`;
+
+    this.ctx.scale(dpr, dpr);
+
+    this.center = {
+      x: this.canvas.width / (2 * dpr),
+      y: this.canvas.height / (2 * dpr),
+    };
   }
 
   private validateConfig() {
@@ -268,15 +282,15 @@ class CircularSlider {
 
       switch (this.dragTarget) {
         case 'from':
-          this.angleFrom = this.adjustAngle(angle);
+          this.angleFrom = this.adjustAngle(this.fromCanvasAngle(angle));
           break;
         case 'to':
-          this.angleTo = this.adjustAngle(angle);
+          this.angleTo = this.adjustAngle(this.fromCanvasAngle(angle));
           break;
         case 'bar':
           const arcLength = this.getArcLength(this.angleFrom, this.angleTo);
-          this.angleFrom = this.adjustAngle(angle - arcLength / 2);
-          this.angleTo = this.adjustAngle(angle + arcLength / 2);
+          this.angleFrom = this.adjustAngle(this.fromCanvasAngle(angle) - arcLength / 2);
+          this.angleTo = this.adjustAngle(this.fromCanvasAngle(angle) + arcLength / 2);
           break;
       }
 
@@ -468,11 +482,16 @@ class CircularSlider {
         config.radius -
         config.strokeWidth -
         config.strokePadding * 2 -
-        (isMajor ? 15 : 8);
+        (isMajor
+          ? window.innerWidth > window.innerHeight
+            ? 6
+            : 12
+          : window.innerWidth > window.innerHeight
+          ? 3
+          : 6);
       // 外半径
       const outerRadius =
-        config.radius - config.strokeWidth - config.strokePadding * 2;
-      console.log(innerRadius, outerRadius);
+        config.radius - config.strokeWidth - config.strokePadding * 2 - 1;
 
       const x1 = center.x + Math.cos(angle) * innerRadius;
       const y1 = center.y + Math.sin(angle) * innerRadius;
@@ -483,7 +502,13 @@ class CircularSlider {
       ctx.moveTo(x1, y1);
       ctx.lineTo(x2, y2);
       ctx.strokeStyle = config.colors.tick;
-      ctx.lineWidth = isMajor ? 2 : 1;
+      ctx.lineWidth = isMajor
+        ? window.innerWidth > window.innerHeight
+          ? 1
+          : 2
+        : window.innerWidth > window.innerHeight
+        ? 0.5
+        : 1;
       ctx.stroke();
     }
   }
@@ -491,13 +516,16 @@ class CircularSlider {
   private drawBar() {
     const { ctx, center, config } = this;
 
+    const canvasAngleFrom = this.toCanvasAngle(this.angleFrom);
+    const canvasAngleTo = this.toCanvasAngle(this.angleTo);
+
     ctx.beginPath();
     ctx.arc(
       center.x,
       center.y,
       config.radius - config.strokeWidth / 2 - config.strokePadding,
-      this.angleFrom,
-      this.angleTo
+      canvasAngleFrom,
+      canvasAngleTo
     );
     ctx.strokeStyle = config.colors.bar;
     ctx.lineWidth = config.strokeWidth;
@@ -508,13 +536,15 @@ class CircularSlider {
   private drawHandle(angle: number) {
     const { ctx, center, config } = this;
 
+    const canvasAngle = this.toCanvasAngle(angle);
+
     const x =
       center.x +
-      Math.cos(angle) *
+      Math.cos(canvasAngle) *
         (config.radius - config.strokeWidth / 2 - config.strokePadding);
     const y =
       center.y +
-      Math.sin(angle) *
+      Math.sin(canvasAngle) *
         (config.radius - config.strokeWidth / 2 - config.strokePadding);
 
     ctx.beginPath();
@@ -530,24 +560,26 @@ class CircularSlider {
   }
 
   private isPointInHandle(x: number, y: number, angle: number): boolean {
+    const canvasAngle = this.toCanvasAngle(angle);
     const handleX =
       this.center.x +
-      Math.cos(angle) *
+      Math.cos(canvasAngle) *
         (this.config.radius -
           this.config.strokeWidth / 2 -
           this.config.strokePadding);
     const handleY =
       this.center.y +
-      Math.sin(angle) *
+      Math.sin(canvasAngle) *
         (this.config.radius -
           this.config.strokeWidth / 2 -
           this.config.strokePadding);
+
     const distance = Math.sqrt((x - handleX) ** 2 + (y - handleY) ** 2);
     return distance <= this.config.handleRadius + 5;
   }
 
   private isPointOnBar(angle: number): boolean {
-    return this.isAngleBetween(angle, this.angleFrom, this.angleTo);
+    return this.isAngleBetween(angle, this.toCanvasAngle(this.angleFrom), this.toCanvasAngle(this.angleTo));
   }
 
   private isAngleBetween(angle: number, from: number, to: number): boolean {
@@ -567,6 +599,14 @@ class CircularSlider {
   private getAngularDistance(a: number, b: number): number {
     const diff = Math.abs(a - b);
     return Math.min(diff, Math.PI * 2 - diff);
+  }
+
+  private toCanvasAngle(angle: number): number {
+    return angle - Math.PI / 2;
+  }
+
+  private fromCanvasAngle(angle: number): number {
+    return angle + Math.PI / 2;
   }
 
   public setValues(from: number, to: number) {
