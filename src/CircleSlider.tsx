@@ -1,11 +1,4 @@
-import {
-  defineComponent,
-  ref,
-  onMounted,
-  onUnmounted,
-  watch,
-  PropType,
-} from 'vue';
+import {defineComponent, onMounted, onUnmounted, PropType, ref, watch,} from 'vue';
 
 interface CircleSliderConfig {
   min: number; // 最小值
@@ -16,7 +9,7 @@ interface CircleSliderConfig {
   radius: number; // 圆的半径
   strokeWidth: number; // 圆环的宽度
   strokePadding: number; // 圆环两侧间距
-  handleRadius: number; // 拖动手柄的半径
+  handleRadius?: number; // 拖动手柄的半径
   tickCount: number; // 刻度数量
   majorTickEvery: number; // 每隔多少个刻度显示一个大刻度
   colors: {
@@ -66,9 +59,8 @@ export default defineComponent({
       to: 12,
       step: null,
       radius: props.width / 2,
-      strokeWidth: 8,
-      strokePadding: 4,
-      handleRadius: 12,
+      strokeWidth: Math.max(6, props.width * 0.05),
+      strokePadding: Math.max(2, props.width * 0.01),
       tickCount: 48,
       majorTickEvery: 4,
       colors: {
@@ -83,6 +75,7 @@ export default defineComponent({
     const mergedConfig = ref<CircleSliderConfig>({
       ...defaultConfig,
       ...props.config,
+      handleRadius: defaultConfig.strokeWidth / 2
     });
 
     const initSlider = () => {
@@ -168,7 +161,7 @@ export default defineComponent({
 });
 
 class CircularSlider {
-  private canvas: HTMLCanvasElement; // canvas element
+  private readonly canvas: HTMLCanvasElement; // canvas element
   private ctx: CanvasRenderingContext2D; // canvas rendering context
   public config: CircleSliderConfig; // circle slider configuration
   private center: { x: number; y: number }; // canvas center point
@@ -338,10 +331,8 @@ class CircularSlider {
       if (this.config.step === null) {
         weight *= Math.PI / 50;
       } else {
-        const stepAngle =
-          this.valueToAngle(this.config.min + weight * this.config.step) -
-          this.valueToAngle(this.config.min);
-        weight = stepAngle;
+        weight = this.valueToAngle(this.config.min + weight * this.config.step) -
+            this.valueToAngle(this.config.min);
       }
 
       if (scale) {
@@ -405,6 +396,17 @@ class CircularSlider {
 
     // 使canvas可以获得焦点
     this.canvas.tabIndex = 0;
+  }
+
+  private getTickSizes() {
+    const baseSize = this.config.radius * 0.03
+    const isLandscape = window.innerWidth > window.innerHeight;
+    return {
+      majorTickLength: baseSize * (isLandscape ? 1.5 : 2),
+      minorTickLength: baseSize * (isLandscape ? 1 : 1.5),
+      majorTickWidth: isLandscape ? 1.5 : 2,
+      minorTickWidth: isLandscape ? 0.8 : 1
+    }
   }
 
   private adjustAngle(angle: number): number {
@@ -472,26 +474,22 @@ class CircularSlider {
   // 绘制刻度
   private drawTicks() {
     const { ctx, center, config } = this;
+    const {
+      majorTickLength,
+      minorTickLength,
+      majorTickWidth,
+      minorTickWidth
+    } = this.getTickSizes();
 
     for (let i = 0; i < config.tickCount; i++) {
       const angle = (i / config.tickCount) * Math.PI * 2;
       const isMajor = i % config.majorTickEvery === 0;
 
-      // 内半径
-      const innerRadius =
-        config.radius -
-        config.strokeWidth -
-        config.strokePadding * 2 -
-        (isMajor
-          ? window.innerWidth > window.innerHeight
-            ? 6
-            : 12
-          : window.innerWidth > window.innerHeight
-          ? 3
-          : 6);
-      // 外半径
-      const outerRadius =
-        config.radius - config.strokeWidth - config.strokePadding * 2 - 1;
+      const tickLength = isMajor ? majorTickLength : minorTickLength;
+      const lineWidth = isMajor ? majorTickWidth : minorTickWidth;
+
+      const innerRadius = config.radius - config.strokeWidth - config.strokePadding * 2 - tickLength;
+      const outerRadius = config.radius - config.strokeWidth - config.strokePadding * 2 - 1;
 
       const x1 = center.x + Math.cos(angle) * innerRadius;
       const y1 = center.y + Math.sin(angle) * innerRadius;
@@ -502,13 +500,7 @@ class CircularSlider {
       ctx.moveTo(x1, y1);
       ctx.lineTo(x2, y2);
       ctx.strokeStyle = config.colors.tick;
-      ctx.lineWidth = isMajor
-        ? window.innerWidth > window.innerHeight
-          ? 1
-          : 2
-        : window.innerWidth > window.innerHeight
-        ? 0.5
-        : 1;
+      ctx.lineWidth = lineWidth;
       ctx.stroke();
     }
   }
