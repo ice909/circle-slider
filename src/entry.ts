@@ -1,4 +1,4 @@
 import { defineCustomElement } from "vue";
-import CircleSlider from "./CircleSlider";
+import CircleSlider from "./Slider.ts";
 
 customElements.define("circle-slider", defineCustomElement(CircleSlider));

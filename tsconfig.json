@@ -1,5 +1,6 @@
 {
     "include": [
+        "src/*.tsx",
         "src/**/*.ts",
         "src/**/*.tsx"
     ],
@@ -9,6 +10,7 @@
         "baseUrl": ".",
         "moduleResolution": "bundler",
         "jsx": "preserve",
-        "jsxImportSource": "vue"
+        "jsxImportSource": "vue",
+        "allowImportingTsExtensions": true
     }
 }
