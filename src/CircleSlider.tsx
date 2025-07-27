@@ -33,15 +33,24 @@ export default defineComponent({
     const canvasRef = ref<HTMLCanvasElement>();
     const sliderInstance = ref<Slider>();
 
+    const strokeWidth = Math.max(6, props.width * 0.05);
+    const strokePadding = Math.max(2, props.width * 0.01);
+    const handleRadius = strokeWidth / 2;
+    
+    // Calculate radius to ensure circle doesn't get clipped
+    // Account for small margin to prevent edge clipping
+    const margin = 2;
+    const radius = props.width / 2 - margin;
+    
     const defaultConfig: CircleSliderConfig = {
       min: 0,
       max: 48,
       from: 0,
       to: 12,
       step: null,
-      radius: props.width / 2,
-      strokeWidth: Math.max(6, props.width * 0.05),
-      strokePadding: Math.max(2, props.width * 0.01),
+      radius,
+      strokeWidth,
+      strokePadding,
       tickCount: 48,
       majorTickEvery: 4,
       colors: {
@@ -56,7 +65,7 @@ export default defineComponent({
     const mergedConfig = ref<CircleSliderConfig>({
       ...defaultConfig,
       ...props.config,
-      handleRadius: defaultConfig.strokeWidth / 2
+      handleRadius
     });
 
     const initSlider = () => {
