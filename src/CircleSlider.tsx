@@ -38,9 +38,9 @@ export default defineComponent({
     const handleRadius = strokeWidth / 2;
     
     // Calculate radius to ensure circle doesn't get clipped
-    // Account for: strokePadding/2 (rail extension) + small margin
+    // Account for small margin to prevent edge clipping
     const margin = 2;
-    const radius = props.width / 2 - strokePadding / 2 - margin;
+    const radius = props.width / 2 - margin;
     
     const defaultConfig: CircleSliderConfig = {
       min: 0,
