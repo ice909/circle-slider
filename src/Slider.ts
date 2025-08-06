@@ -1,21 +1,48 @@
 import {CircleSliderConfig} from "./types.ts";
 
 export class Slider {
-    private readonly canvas: HTMLCanvasElement; // canvas element
-    private ctx: CanvasRenderingContext2D; // canvas rendering context
-    public config: CircleSliderConfig; // circle slider configuration
-    private center: { x: number; y: number }; // canvas center point
+    private readonly canvas: HTMLCanvasElement;
+    private ctx: CanvasRenderingContext2D;
+    public config: CircleSliderConfig;
+    // 画布中心点
+    private center: { x: number; y: number };
     private isDragging = false;
+    // 当前拖拽目标: 'from', 'to', 'bar' 或 null
+    // 'from' 和 'to' 分别表示起始和结束角度的拖拽，'bar' 表示拖拽整个圆弧
     private dragTarget: 'from' | 'to' | 'bar' | null = null;
+    // 起始角度
     private angleFrom = 0;
+    // 结束角度
     private angleTo = Math.PI / 2;
-    private onFinish?: () => void;
+    // 保存上次通知的值，避免重复通知
+    private lastNotifiedValues: { from: number; to: number } = { from: 0, to: 0 };
+    // 拖拽时from和to更新的回调
+    private changeCallback?: (from: number, to: number) => void;
     private eventListeners: Array<{
         element: Element | Document;
         event: string;
         handler: EventListener;
         options?: boolean | AddEventListenerOptions;
     }> = [];
+
+    setChangeCallback(callback: (from: number, to: number) => void) {
+        this.changeCallback = callback;
+    }
+
+    private notifyChange() {
+        if (this.changeCallback) {
+            const currentValues = this.getValues();
+
+            const fromChanged = Math.abs(currentValues.from - this.lastNotifiedValues.from) >= (this.config.step || 0.1);
+            const toChanged = Math.abs(currentValues.to - this.lastNotifiedValues.to) >= (this.config.step || 0.1);
+
+            if (fromChanged || toChanged) {
+                this.lastNotifiedValues = { ...currentValues };
+                console.log('Notifying change:', currentValues);
+                this.changeCallback(currentValues.from, currentValues.to);
+            }
+        }
+    }
 
     constructor(canvas: HTMLCanvasElement, config: CircleSliderConfig) {
         this.canvas = canvas;
@@ -28,6 +55,8 @@ export class Slider {
 
         this.angleFrom = this.valueToAngle(this.config.from);
         this.angleTo = this.valueToAngle(this.config.to);
+
+        this.lastNotifiedValues = { from: this.config.from, to: this.config.to };
 
         this.setupEventListeners();
         this.draw();
@@ -88,6 +117,8 @@ export class Slider {
             };
         };
 
+        let barDragOffset = 0;
+
         const handleStart = (e: MouseEvent | TouchEvent) => {
             e.preventDefault();
             const pos = getEventPos(e);
@@ -99,6 +130,25 @@ export class Slider {
                 this.dragTarget = 'to';
             } else if (this.isPointOnBar(angle)) {
                 this.dragTarget = 'bar';
+                const currentAngle = this.fromCanvasAngle(angle);
+                let barCenter: number;
+                if (this.angleFrom <= this.angleTo) {
+                    // 不跨越边界的情况
+                    barCenter = (this.angleFrom + this.angleTo) / 2;
+                } else {
+                    // 跨越边界的情况 (例如: from=350°, to=30°)
+                    const midAngle = (this.angleFrom + this.angleTo + Math.PI * 2) / 2;
+                    barCenter = midAngle > Math.PI * 2 ? midAngle - Math.PI * 2 : midAngle;
+                }
+
+                barDragOffset = currentAngle - barCenter;
+
+                // 处理偏移量跨越边界的情况
+                if (barDragOffset > Math.PI) {
+                    barDragOffset -= Math.PI * 2;
+                } else if (barDragOffset < -Math.PI) {
+                    barDragOffset += Math.PI * 2;
+                }
             }
 
             if (this.dragTarget) {
@@ -122,86 +172,22 @@ export class Slider {
                     break;
                 case 'bar':
                     const arcLength = this.getArcLength(this.angleFrom, this.angleTo);
-                    this.angleFrom = this.adjustAngle(this.fromCanvasAngle(angle) - arcLength / 2);
-                    this.angleTo = this.adjustAngle(this.fromCanvasAngle(angle) + arcLength / 2);
+                    // 使用偏移量计算新的中心位置
+                    const newCenter = this.fromCanvasAngle(angle) - barDragOffset;
+                    this.angleFrom = this.adjustAngle(newCenter - arcLength / 2);
+                    this.angleTo = this.adjustAngle(newCenter + arcLength / 2);
                     break;
             }
 
             this.draw();
+            this.notifyChange();
         };
 
         const handleEnd = () => {
             if (this.isDragging) {
                 this.isDragging = false;
                 this.dragTarget = null;
-                this.onFinish?.();
             }
-        };
-
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (!this.canvas.contains(document.activeElement as Node)) return;
-
-            e.preventDefault();
-            let weight = 1;
-            let scale = false;
-
-            switch (e.key) {
-                case 'ArrowUp':
-                    scale = true;
-                    weight = -1;
-                    break;
-                case 'ArrowDown':
-                    scale = true;
-                    weight = 1;
-                    break;
-                case 'ArrowLeft':
-                    weight = -1;
-                    break;
-                case 'ArrowRight':
-                    weight = 1;
-                    break;
-                default:
-                    return;
-            }
-
-            if (e.shiftKey) {
-                weight *= 10;
-            }
-
-            if (this.config.step === null) {
-                weight *= Math.PI / 50;
-            } else {
-                weight = this.valueToAngle(this.config.min + weight * this.config.step) -
-                    this.valueToAngle(this.config.min);
-            }
-
-            if (scale) {
-                this.angleFrom = this.adjustAngle(this.angleFrom - weight);
-                this.angleTo = this.adjustAngle(this.angleTo + weight);
-            } else {
-                this.angleFrom = this.adjustAngle(this.angleFrom + weight);
-                this.angleTo = this.adjustAngle(this.angleTo + weight);
-            }
-
-            this.draw();
-            this.onFinish?.();
-        };
-
-        const handleDoubleClick = (e: MouseEvent) => {
-            const pos = getEventPos(e);
-            const angle = this.adjustAngle(this.getAngleFromPoint(pos.x, pos.y));
-
-            const distToFrom = this.getAngularDistance(angle, this.angleFrom);
-            const distToTo = this.getAngularDistance(angle, this.angleTo);
-
-            if (distToFrom < distToTo) {
-                this.angleFrom = angle;
-            } else {
-                this.angleTo = angle;
-            }
-
-            this.draw();
-            this.onFinish?.();
         };
 
         const handleWheel = (e: WheelEvent) => {
@@ -214,7 +200,6 @@ export class Slider {
             this.angleTo = this.adjustAngle(this.angleTo + (weight * Math.PI) / 50);
 
             this.draw();
-            this.onFinish?.();
         };
 
         // 注册事件监听器
@@ -229,9 +214,6 @@ export class Slider {
             passive: false,
         });
         this.addEventListener(document, 'touchend', handleEnd);
-
-        this.addEventListener(document, 'keydown', handleKeyDown);
-        this.addEventListener(this.canvas, 'dblclick', handleDoubleClick);
         this.addEventListener(this.canvas, 'wheel', handleWheel);
 
         // 使canvas可以获得焦点
@@ -266,7 +248,16 @@ export class Slider {
         const normalizedAngle =
             ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
         const ratio = normalizedAngle / (Math.PI * 2);
-        return this.config.min + ratio * (this.config.max - this.config.min);
+        const value = this.config.min + ratio * (this.config.max - this.config.min);
+
+        // 如果有步长，按步长取整
+        if (this.config.step !== null && this.config.step > 0) {
+            const steppedValue = this.config.step * Math.round(value / this.config.step);
+            return Math.round(steppedValue);
+        }
+
+        // 没有步长时直接取整
+        return Math.round(value);
     }
 
     private valueToAngle(value: number): number {
@@ -348,18 +339,42 @@ export class Slider {
     private drawBar() {
         const { ctx, center, config } = this;
 
+        // 获取当前的实际值进行比较
+        const fromValue = this.angleToValue(this.angleFrom);
+        const toValue = this.angleToValue(this.angleTo);
+
+        // 如果值相等，不绘制圆弧
+        if (fromValue === toValue) {
+            return;
+        }
+
         const canvasAngleFrom = this.toCanvasAngle(this.angleFrom);
         const canvasAngleTo = this.toCanvasAngle(this.angleTo);
+
+        // 如果转换后的角度也相等，不绘制圆弧
+        if (Math.abs(canvasAngleFrom - canvasAngleTo) < 0.001) {
+            return;
+        }
+
+        // 计算圆弧外接矩形的两个端点，实现类似SVG的右上到左下方向渐变
+        const r = config.radius - config.strokeWidth / 2 - config.strokePadding;
+        const x0 = center.x + r, y0 = center.y - r; // 右上
+        const x1 = center.x - r, y1 = center.y + r; // 左下
+
+        // 创建线性渐变
+        const gradient = ctx.createLinearGradient(x0, y0, x1, y1);
+        gradient.addColorStop(0, 'rgba(36,199,212,0.5)'); // #24C7D4, 0.5透明
+        gradient.addColorStop(1, '#24C7D4');              // #24C7D4, 不透明
 
         ctx.beginPath();
         ctx.arc(
             center.x,
             center.y,
-            config.radius - config.strokeWidth / 2 - config.strokePadding,
+            r,
             canvasAngleFrom,
             canvasAngleTo
         );
-        ctx.strokeStyle = config.colors.bar;
+        ctx.strokeStyle = gradient; // 使用渐变
         ctx.lineWidth = config.strokeWidth;
         ctx.lineCap = 'round';
         ctx.stroke();
@@ -428,11 +443,6 @@ export class Slider {
         return length;
     }
 
-    private getAngularDistance(a: number, b: number): number {
-        const diff = Math.abs(a - b);
-        return Math.min(diff, Math.PI * 2 - diff);
-    }
-
     private toCanvasAngle(angle: number): number {
         return angle - Math.PI / 2;
     }
@@ -444,6 +454,8 @@ export class Slider {
     public setValues(from: number, to: number) {
         this.angleFrom = this.adjustAngle(this.valueToAngle(from));
         this.angleTo = this.adjustAngle(this.valueToAngle(to));
+
+        this.lastNotifiedValues = { from, to };
         this.draw();
     }
 
@@ -452,10 +464,6 @@ export class Slider {
             from: this.angleToValue(this.angleFrom),
             to: this.angleToValue(this.angleTo),
         };
-    }
-
-    public setFinishCallback(callback: () => void) {
-        this.onFinish = callback;
     }
 
     public destroy() {

@@ -1,4 +1,4 @@
-import {defineComponent, onMounted, onUnmounted, PropType, ref, watch,} from 'vue';
+import {defineComponent, nextTick, onMounted, onUnmounted, PropType, ref} from 'vue';
 import type { CircleSliderConfig } from "./types.ts";
 import { Slider } from "./Slider.ts";
 
@@ -11,8 +11,8 @@ export default defineComponent({
   name: 'CanvasCircleSlider',
   props: {
     config: {
-      type: Object as PropType<Partial<CircleSliderConfig>>,
-      default: () => ({}),
+      type: Object as PropType<CircleSliderConfig>,
+      default: () => ({} as CircleSliderConfig),
     },
     modelValue: {
       type: Object as PropType<SliderValues>,
@@ -27,46 +27,18 @@ export default defineComponent({
       type: Number,
       default: undefined,
     },
+    padding: {
+      type: Number,
+      default: 20,
+    }
   },
-  emits: ['update:modelValue', 'change', 'finish'],
+  emits: ['update:modelValue', 'change'],
   setup(props, { emit }) {
+    const canvasContainer = ref<HTMLDivElement>();
     const canvasRef = ref<HTMLCanvasElement>();
     const sliderInstance = ref<Slider>();
 
-    const strokeWidth = Math.max(6, props.width * 0.05);
-    const strokePadding = Math.max(2, props.width * 0.01);
-    const handleRadius = strokeWidth / 2;
-    
-    // Calculate radius to ensure circle doesn't get clipped
-    // Account for small margin to prevent edge clipping
-    const margin = 2;
-    const radius = props.width / 2 - margin;
-    
-    const defaultConfig: CircleSliderConfig = {
-      min: 0,
-      max: 48,
-      from: 0,
-      to: 12,
-      step: null,
-      radius,
-      strokeWidth,
-      strokePadding,
-      tickCount: 48,
-      majorTickEvery: 4,
-      colors: {
-        rail: '#E5E7EB',
-        bar: '#24C7D4',
-        handle: '#FFFFFF',
-        tick: '#9CA3AF',
-        text: '#374151',
-      },
-    };
-
-    const mergedConfig = ref<CircleSliderConfig>({
-      ...defaultConfig,
-      ...props.config,
-      handleRadius
-    });
+    const config = ref<CircleSliderConfig>(props.config);
 
     const initSlider = () => {
       if (!canvasRef.value) return;
@@ -79,49 +51,61 @@ export default defineComponent({
       // 创建新实例
       sliderInstance.value = new Slider(
         canvasRef.value,
-        mergedConfig.value
+        config.value
       );
 
       // 设置初始值
       sliderInstance.value.setValues(
-        props.modelValue.from,
-        props.modelValue.to
+        config.value.from || props.modelValue.from,
+        config.value.to || props.modelValue.to
       );
 
       // 设置回调
-      sliderInstance.value.setFinishCallback(() => {
-        if (!sliderInstance.value) return;
-
-        const values = sliderInstance.value.getValues();
-        emit('update:modelValue', values);
-        emit('change', values);
-        emit('finish', values);
+      sliderInstance.value.setChangeCallback((from, to) => {
+        console.log('Slider values changed:', { from, to });
+        emit('update:modelValue', { from, to });
+        emit('change', { from, to });
       });
     };
 
-    // 监听配置变化
-    watch(
-      () => props.config,
-      (newConfig) => {
-        mergedConfig.value = { ...defaultConfig, ...newConfig };
-        initSlider();
-      },
-      { deep: true }
-    );
+    const setupAndInit = async () => {
+      await nextTick();
 
-    // 监听值变化
-    watch(
-      () => props.modelValue,
-      (newValue) => {
-        if (sliderInstance.value) {
-          sliderInstance.value.setValues(newValue.from, newValue.to);
-        }
-      },
-      { deep: true }
-    );
+      console.log('Setting up CircleSlider with config:', config.value);
+      if (!canvasContainer.value) return;
+      console.log('Canvas container:', canvasContainer.value);
+      const width = canvasContainer.value.clientWidth;
+      const strokeWidth = Math.max(6, width * 0.09);
+      const strokePadding = Math.max(2, width * 0.02);
+      const handleRadius = strokeWidth / 2;
+      const margin = 2;
+      const radius = width / 2 - margin - props.padding;
+
+      let _config = props.config;
+
+      _config.min = 0;
+      _config.max = 48;
+      _config.from = 0;
+      _config.to = 12;
+      _config.step = 1;
+      _config.radius = radius;
+      _config.handleRadius = handleRadius;
+      _config.strokeWidth = strokeWidth;
+      _config.strokePadding = strokePadding;
+      _config.tickCount = 24;
+      _config.majorTickEvery = 2;
+      _config.colors = {
+        rail: '#f3f7fa',
+        bar: '#24C7D4',
+        handle: '#FFFFFF',
+        tick: '#e3e5e8',
+        text: '#374151',
+      };
+      initSlider();
+    };
 
     onMounted(() => {
-      initSlider();
+      setupAndInit();
     });
 
     onUnmounted(() => {
@@ -130,22 +114,27 @@ export default defineComponent({
       }
     });
 
-    const computedHeight = () => {
-      return props.height ?? props.width;
-    };
-
     return () => (
-      <canvas
-        ref={canvasRef}
-        width={props.width}
-        height={computedHeight()}
-        class="canvas-circle-slider"
-        style={{
-          display: 'block',
-          maxWidth: '100%',
-          height: 'auto',
-        }}
-      />
+      <div>
+        <div
+          ref={canvasContainer}
+          style={{
+            padding: '20px',
+            width: '100%',
+            height: '100%',
+            boxSizing: 'border-box',
+          }}
+        >
+          <canvas
+            ref={canvasRef}
+            style={{
+              width: '100%',
+              height: '100%',
+              display: 'block',
+            }}
+          />
+        </div>
+      </div>
     );
   },
 });
